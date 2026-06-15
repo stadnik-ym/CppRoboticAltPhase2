@@ -21,6 +21,8 @@ jobs:
         uses: DoozyX/clang-format-lint-action@v0.20
         with:
           source: "src"
-          extensions: "cpp,hpp,h"
+          extensions: "cpp,cc"
           clangFormatVersion: 20
           style: "chromium"
+
+# TODO: ДОРОБИТИ ЛІНТЕР, ЩОБ ЗМІНИ ВСТУПАЛИ В СИЛУ
