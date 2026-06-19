@@ -25,7 +25,7 @@ public:
     {
         // Инициализация параметров
         std::string port = this->declare_parameter("port", "/dev/ttyUSB0");
-        std::string frame_id = this->declare_parameter("frame_id", "laser_frame");
+        frame_id_ = this->declare_parameter("frame_id", "laser_frame");
         double publish_rate = this->declare_parameter("publish_rate_hz", 50.0);
         range_min_ = this->declare_parameter("range_min_m", 0.05);
         range_max_ = this->declare_parameter("range_max_m", 12.0);
@@ -149,7 +149,7 @@ private:
         auto now = this->get_clock()->now();
         auto scan = sensor_msgs::msg::LaserScan();
         scan.header.stamp = now;
-        scan.header.frame_id = this->declare_parameter("frame_id", "laser_frame");
+        scan.header.frame_id = frame_id_;
         scan.angle_min = 0.0;
         scan.angle_max = 2.0 * M_PI;
         scan.angle_increment = M_PI / 180.0;
@@ -205,6 +205,7 @@ private:
     }
 
     int fd_ = -1;
+    std::string frame_id_;
     double range_min_, range_max_, angle_offset_, front_min_, front_max_, point_max_age_, front_hold_;
     int min_conf_, front_min_points_, front_window_;
     bool invert_angle_;
