@@ -26,6 +26,7 @@ public:
         // Инициализация параметров
         std::string port = this->declare_parameter("port", "/dev/ttyUSB0");
         frame_id_ = this->declare_parameter("frame_id", "laser_frame");
+        last_front_time_ = this->get_clock()->now();
         double publish_rate = this->declare_parameter("publish_rate_hz", 50.0);
         range_min_ = this->declare_parameter("range_min_m", 0.05);
         range_max_ = this->declare_parameter("range_max_m", 12.0);
@@ -42,7 +43,7 @@ public:
         // Настройка массивов данных
         ranges_.assign(360, std::numeric_limits<float>::infinity());
         intensities_.assign(360, 0.0f);
-        update_times_.assign(360, rclcpp::Time(0, 0, RCL_CLOCK_UNINITIALIZED));
+        update_times_.assign(360, this->get_clock()->now());
 
         // Паблишеры
         scan_pub_ = this->create_publisher<sensor_msgs::msg::LaserScan>("/scan", 10);
@@ -210,7 +211,7 @@ private:
     int min_conf_, front_min_points_, front_window_;
     bool invert_angle_;
     float last_valid_front_ = -1.0f;
-    rclcpp::Time last_front_time_{0, 0, RCL_CLOCK_UNINITIALIZED};
+    rclcpp::Time last_front_time_;
 
     std::vector<uint8_t> buffer_;
     std::vector<float> ranges_, intensities_, front_history_;
