@@ -9,81 +9,9 @@
 #include <chrono>
 #include <cmath>
 #include <thread>
+#include <memory>
 
 namespace ld06 {
-
-// ============================================================================
-// SerialReader Implementation
-// ============================================================================
-
-SerialReader::SerialReader(const std::string& port, uint32_t baudrate,
-                           uint32_t timeout_ms)
-    : serial_(port, baudrate, serial::Timeout::simpleTimeout(timeout_ms)) {}
-
-SerialReader::~SerialReader() {
-  if (serial_.isOpen()) {
-    serial_.close();
-  }
-}
-
-bool SerialReader::sync_to_header() {
-  while (buffer_.size() > 0) {
-    if (buffer_[0] == PACKET_HEADER_0) {
-      if (buffer_.size() > 1 && buffer_[1] == PACKET_HEADER_1) {
-        return true;
-      }
-      if (buffer_.size() == 1) {
-        return false;  // Wait for next byte
-      }
-    }
-    buffer_.erase(buffer_.begin());
-  }
-  return false;
-}
-
-bool SerialReader::read_packet(std::vector<uint8_t>& packet) {
-  packet.clear();
-
-  if (!serial_.isOpen()) {
-    return false;
-  }
-
-  // Read available data
-  if (serial_.available()) {
-    uint8_t byte;
-    while (serial_.available() && buffer_.size() < 100) {
-      byte = serial_.read(1)[0];
-      buffer_.push_back(byte);
-    }
-  }
-
-  // Try to sync to header
-  if (!sync_to_header()) {
-    if (buffer_.empty()) {
-      // Block-read one byte to avoid spinning
-      auto data = serial_.read(1);
-      if (!data.empty()) {
-        buffer_.push_back(data[0]);
-        return sync_to_header();
-      }
-    }
-    return false;
-  }
-
-  // Wait for full packet
-  if (buffer_.size() < PACKET_SIZE) {
-    auto data = serial_.read(PACKET_SIZE - buffer_.size());
-    buffer_.insert(buffer_.end(), data.begin(), data.end());
-  }
-
-  if (buffer_.size() >= PACKET_SIZE) {
-    packet.assign(buffer_.begin(), buffer_.begin() + PACKET_SIZE);
-    buffer_.erase(buffer_.begin(), buffer_.begin() + PACKET_SIZE);
-    return true;
-  }
-
-  return false;
-}
 
 // ============================================================================
 // LD06Node Implementation
@@ -196,8 +124,6 @@ void LD06Node::load_parameters() {
       this->get_parameter("immediate_front_publish").as_bool();
   config_.immediate_front_pub_min_period =
       this->get_parameter("immediate_front_pub_min_period").as_double();
-
-  last_immediate_front_pub_ = std::chrono::system_clock::now();
 }
 
 void LD06Node::init_publishers() {
@@ -304,7 +230,7 @@ void LD06Node::publish_data() {
   scan_msg->angle_min = 0.0f;
   scan_msg->angle_max = 2.0f * M_PI;
   scan_msg->angle_increment =
-      static_cast<float>(std::radians(config_.angle_resolution_deg));
+      static_cast<float>(config_.angle_resolution_deg * M_PI / 180.0);
 
   scan_msg->time_increment = 0.0f;
   scan_msg->scan_time = 1.0f / std::max(config_.publish_rate_hz, 1.0f);

@@ -1,37 +1,16 @@
 #pragma once
 
 #include "ld06_node.hpp"
-
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/laser_scan.hpp>
 #include <std_msgs/msg/float32.hpp>
 #include <std_msgs/msg/float32_multi_array.hpp>
+#include "ld06_serial_libserialport.hpp"
 
-#include <serial/serial.h>
 #include <queue>
 #include <memory>
 
 namespace ld06 {
-
-// ============================================================================
-// Serial Reader Thread
-// ============================================================================
-
-class SerialReader {
- public:
-  SerialReader(const std::string& port, uint32_t baudrate,
-               uint32_t timeout_ms = 5);
-  ~SerialReader();
-
-  bool is_open() const { return serial_.isOpen(); }
-  bool read_packet(std::vector<uint8_t>& packet);
-
- private:
-  serial::Serial serial_;
-  std::vector<uint8_t> buffer_;
-
-  bool sync_to_header();
-};
 
 // ============================================================================
 // LD06 ROS2 Node

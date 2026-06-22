@@ -1,19 +1,16 @@
-/*
- * Альтернативна реалізація для libserialport
- * Якщо ти хочеш використовувати libserialport замість ROS serial пакету
- */
-
 #pragma once
 
-// #include <cstdint>
 #include <libserialport.h>
 #include <vector>
 #include <string>
-#include <memory>
 #include <stdexcept>
-#include "ld06_node.hpp"
+#include <cstdint>
 
 namespace ld06 {
+
+// ============================================================================
+// Serial Reader для libserialport
+// ============================================================================
 
 class SerialReader {
  public:

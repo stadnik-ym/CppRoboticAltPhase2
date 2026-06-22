@@ -1,4 +1,5 @@
 #include "../include/ld06_lidar/ld06_serial_libserialport.hpp"
+#include "../include/ld06_lidar/ld06_node.hpp"
 
 #include <cstring>
 #include <chrono>
@@ -8,20 +9,22 @@ namespace ld06 {
 
 SerialReader::SerialReader(const std::string& port, uint32_t baudrate,
                            uint32_t timeout_ms) {
-  struct sp_port* ports = nullptr;
+  struct sp_port* port_ptr = nullptr;
 
   // Отримати список портів
-  int port_count = sp_get_port_by_name(port.c_str(), &port_);
-  if (port_count != SP_OK) {
+  sp_return error = sp_get_port_by_name(port.c_str(), &port_ptr);
+  if (error != SP_OK) {
     throw std::runtime_error("Failed to get port: " + port);
   }
 
-  if (!port_) {
+  if (!port_ptr) {
     throw std::runtime_error("Port not found: " + port);
   }
 
+  port_ = port_ptr;
+
   // Відкрити порт
-  sp_return error = sp_open(port_, SP_MODE_READ_WRITE);
+  error = sp_open(port_, SP_MODE_READ_WRITE);
   if (error != SP_OK) {
     throw_error("Failed to open port", error);
   }
@@ -59,14 +62,15 @@ SerialReader::SerialReader(const std::string& port, uint32_t baudrate,
     throw_error("Failed to set flow control", error);
   }
 
-  // Встановити timeout
-  sp_set_read_timeout(port_, timeout_ms);
+  // Note: timeout буде встановлено в sp_blocking_read() функції
+  // libserialport не має sp_set_read_blocking_timeout - timeout передається у функцію читання
 }
 
 SerialReader::~SerialReader() {
   if (port_ != nullptr) {
     sp_close(port_);
     sp_free_port(port_);
+    port_ = nullptr;
   }
 }
 
@@ -99,7 +103,7 @@ bool SerialReader::read_packet(std::vector<uint8_t>& packet) {
     return false;
   }
 
-  // Read available data (non-blocking)
+  // Read available data (non-blocking check)
   unsigned int bytes_waiting = 0;
   sp_return error = sp_input_waiting(port_);
   if (error > 0) {
@@ -108,11 +112,12 @@ bool SerialReader::read_packet(std::vector<uint8_t>& packet) {
 
   if (bytes_waiting > 0) {
     unsigned int to_read = std::min(bytes_waiting, 100u - (unsigned int)buffer_.size());
-    std::vector<uint8_t> temp(to_read);
-
-    error = sp_nonblocking_read(port_, temp.data(), to_read);
-    if (error > 0) {
-      buffer_.insert(buffer_.end(), temp.begin(), temp.begin() + error);
+    if (to_read > 0) {
+      std::vector<uint8_t> temp(to_read);
+      error = sp_nonblocking_read(port_, temp.data(), to_read);
+      if (error > 0) {
+        buffer_.insert(buffer_.end(), temp.begin(), temp.begin() + error);
+      }
     }
   }
 
@@ -120,8 +125,9 @@ bool SerialReader::read_packet(std::vector<uint8_t>& packet) {
   if (!sync_to_header()) {
     if (buffer_.empty()) {
       // Block-read one byte to avoid spinning
+      // Timeout 5ms for single byte
       std::vector<uint8_t> temp(1);
-      int bytes_read = sp_blocking_read(port_, temp.data(), 1, 5);  // 5ms timeout
+      int bytes_read = sp_blocking_read(port_, temp.data(), 1, 5);
       if (bytes_read > 0) {
         buffer_.push_back(temp[0]);
         return sync_to_header();
@@ -135,7 +141,8 @@ bool SerialReader::read_packet(std::vector<uint8_t>& packet) {
     unsigned int needed = PACKET_SIZE - buffer_.size();
     std::vector<uint8_t> temp(needed);
 
-    int bytes_read = sp_blocking_read(port_, temp.data(), needed, 50);  // 50ms timeout
+    // Timeout 50ms for remaining bytes
+    int bytes_read = sp_blocking_read(port_, temp.data(), needed, 50);
     if (bytes_read > 0) {
       buffer_.insert(buffer_.end(), temp.begin(), temp.begin() + bytes_read);
     }

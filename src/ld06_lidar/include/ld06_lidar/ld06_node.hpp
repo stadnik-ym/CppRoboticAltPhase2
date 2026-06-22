@@ -125,9 +125,10 @@ class FrontSectorAnalyzer {
   std::optional<float> get_last_valid() const;
   void reset();
 
- private:
+  // ✅ PUBLIC - потрібна для read_loop()
   bool angle_in_front(float angle_deg) const;
 
+ private:
   float min_deg_;
   float max_deg_;
   int filter_window_;
