@@ -54,6 +54,7 @@
             pkgs.lgpio
             pkgs.opencv
             pkgs.pcl
+            pkgs.libserialport
             ros-packages
           ];
 
