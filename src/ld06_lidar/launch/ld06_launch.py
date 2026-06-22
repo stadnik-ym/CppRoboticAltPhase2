@@ -4,7 +4,14 @@ from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
+from ament_index_python.packages import get_package_share_directory
+from pathlib import Path
 
+lidar_safety_yaml = str(
+    Path(
+        get_package_share_directory('ld06_lidar')
+    ) / 'config' / 'lidar_safety.yaml'
+)
 
 def generate_launch_description():
     port_arg = DeclareLaunchArgument(
@@ -39,8 +46,19 @@ def generate_launch_description():
         ]
     )
 
+    ld06_safety_node = Node(
+        package='ld06_lidar',
+        executable='ld06_safety_node',
+        name='ld06_safety_layer',
+        output='screen',
+        parameters=[
+            lidar_safety_yaml
+        ]
+    )
+
     return LaunchDescription([
         port_arg,
         baudrate_arg,
         ld06_node,
+        ld06_safety_node,
     ])

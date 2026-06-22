@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 
 # Find libserialport via pkg-config (Nix-friendly)
@@ -35,6 +36,10 @@ add_executable(ld06_node
   src/ld06_ros_node.cpp
 )
 
+add_executable(ld06_safety_node
+  src/ld06_safety_node.cpp
+)
+
 target_include_directories(ld06_node
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -53,8 +58,19 @@ ament_target_dependencies(ld06_node
     std_msgs
 )
 
+ament_target_dependencies(ld06_safety_node
+  PUBLIC
+    rclcpp
+    sensor_msgs
+    std_msgs
+    geometry_msgs
+)
+
 # Install
-install(TARGETS ld06_node
+install(
+  TARGETS
+    ld06_node
+    ld06_safety_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
