@@ -20,7 +20,7 @@ def generate_launch_description():
     )
 
     ld06_node = Node(
-        package='ld06_ros2',
+        package='ld06_lidar',
         executable='ld06_node',
         name='ld06_node',
         output='screen',
