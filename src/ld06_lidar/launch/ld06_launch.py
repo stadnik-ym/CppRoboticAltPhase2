@@ -4,14 +4,7 @@ from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
-from ament_index_python.packages import get_package_share_directory
-from pathlib import Path
 
-lidar_safety_yaml = str(
-    Path(
-        get_package_share_directory('ld06_lidar')
-    ) / 'launch' / 'ld06_safety.yaml'
-)
 
 def generate_launch_description():
     port_arg = DeclareLaunchArgument(
@@ -46,13 +39,28 @@ def generate_launch_description():
         ]
     )
 
-    ld06_safety_node = Node(
+    safety_node = Node(
         package='ld06_lidar',
         executable='ld06_safety_node',
-        name='ld06_safety_layer',
+        name='lidar_safety',
         output='screen',
         parameters=[
-            lidar_safety_yaml
+            {'input_cmd_topic': '/cmd_vel_raw'},
+            {'output_cmd_topic': '/cmd_vel'},
+            {'front_distance_topic': '/lidar/front_distance'},
+            {'safety_stop_topic': '/safety/lidar_stop'},
+            {'cmd_timeout_sec': 0.5},
+            {'lidar_timeout_sec': 0.7},
+            {'stop_distance_m': 0.22},
+            {'clear_distance_m': 0.30},
+            {'invalid_front_timeout_sec': 1.0},
+            {'allow_rotation_when_blocked': True},
+            {'allow_reverse_when_blocked': True},
+            {'max_linear_x': 0.35},
+            {'max_angular_z': 1.5},
+            {'enable_slowdown': True},
+            {'slowdown_distance_m': 0.80},
+            {'min_slowdown_factor': 0.25},
         ]
     )
 
@@ -60,5 +68,5 @@ def generate_launch_description():
         port_arg,
         baudrate_arg,
         ld06_node,
-        ld06_safety_node,
+        safety_node,
     ])

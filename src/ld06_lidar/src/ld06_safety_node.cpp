@@ -1,434 +1,362 @@
+#include "../include/ld06_lidar/ld06_safety_node.hpp"
+
 #include <chrono>
-#include <memory>
-#include <algorithm>
-#include <string>
+#include <cmath>
+#include <iomanip>
+#include <sstream>
 
-#include <rclcpp/rclcpp.hpp>
-#include "geometry_msgs/msg/twist.hpp"
-#include "std_msgs/msg/float32.hpp"
-#include "std_msgs/msg/bool.hpp"
+namespace ld06 {
 
-using namespace std::chrono_literals;
+LidarSafetyNode::LidarSafetyNode() : rclcpp::Node("lidar_safety") {
+  declare_parameters();
+  load_parameters();
 
-class LidarSafety : public rclcpp::Node
-{
-public:
-    LidarSafety()
-        : Node("lidar_safety")
-    {
-        declare_parameter("input_cmd_topic", "/cmd_vel_raw");
-        declare_parameter("output_cmd_topic", "/cmd_vel");
-        declare_parameter("front_distance_topic", "/lidar/front_distance");
-        declare_parameter("safety_stop_topic", "/safety/lidar_stop");
+  // Initialize state
+  last_cmd_time_ = std::chrono::system_clock::now();
+  last_lidar_time_ = std::chrono::system_clock::now();
+  last_valid_front_time_ = std::chrono::system_clock::now() -
+                            std::chrono::seconds(10);  // old timestamp
+  front_distance_ = -1.0;
+  front_blocked_ = false;
+  last_log_time_ = std::chrono::system_clock::now();
 
-        declare_parameter("cmd_timeout_sec", 0.5);
-        declare_parameter("lidar_timeout_sec", 0.7);
+  // Create subscriptions
+  cmd_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
+      config_.input_cmd_topic, 1,
+      [this](const geometry_msgs::msg::Twist::SharedPtr msg) {
+        this->cmd_callback(msg);
+      });
 
-        declare_parameter("stop_distance_m", 0.22);
-        declare_parameter("clear_distance_m", 0.30);
+  front_sub_ = this->create_subscription<std_msgs::msg::Float32>(
+      config_.front_distance_topic, 1,
+      [this](const std_msgs::msg::Float32::SharedPtr msg) {
+        this->front_distance_callback(msg);
+      });
 
-        declare_parameter("invalid_front_timeout_sec", 1.0);
+  // Create publishers
+  cmd_pub_ = this->create_publisher<geometry_msgs::msg::Twist>(
+      config_.output_cmd_topic, 1);
+  stop_pub_ = this->create_publisher<std_msgs::msg::Bool>(
+      config_.safety_stop_topic, 10);
 
-        declare_parameter("allow_rotation_when_blocked", true);
-        declare_parameter("allow_reverse_when_blocked", true);
+  // Create control timer (100 Hz)
+  control_timer_ = this->create_wall_timer(
+      std::chrono::milliseconds(10),
+      [this]() { this->control_loop(); });
 
-        declare_parameter("max_linear_x", 0.35);
-        declare_parameter("max_angular_z", 1.5);
+  log_startup(this->get_logger(), config_);
+}
 
-        declare_parameter("enable_slowdown", true);
-        declare_parameter("slowdown_distance_m", 0.80);
-        declare_parameter("min_slowdown_factor", 0.25);
+LidarSafetyNode::~LidarSafetyNode() {}
 
-        get_parameter("input_cmd_topic", input_cmd_topic_);
-        get_parameter("output_cmd_topic", output_cmd_topic_);
-        get_parameter("front_distance_topic", front_distance_topic_);
-        get_parameter("safety_stop_topic", safety_stop_topic_);
+void LidarSafetyNode::declare_parameters() {
+  this->declare_parameter("input_cmd_topic", "/cmd_vel_raw");
+  this->declare_parameter("output_cmd_topic", "/cmd_vel");
+  this->declare_parameter("front_distance_topic", "/lidar/front_distance");
+  this->declare_parameter("safety_stop_topic", "/safety/lidar_stop");
 
-        get_parameter("cmd_timeout_sec", cmd_timeout_sec_);
-        get_parameter("lidar_timeout_sec", lidar_timeout_sec_);
+  this->declare_parameter("cmd_timeout_sec", 0.5);
+  this->declare_parameter("lidar_timeout_sec", 0.7);
 
-        get_parameter("stop_distance_m", stop_distance_m_);
-        get_parameter("clear_distance_m", clear_distance_m_);
+  this->declare_parameter("stop_distance_m", 0.22);
+  this->declare_parameter("clear_distance_m", 0.30);
+  this->declare_parameter("invalid_front_timeout_sec", 1.0);
 
-        get_parameter(
-            "invalid_front_timeout_sec",
-            invalid_front_timeout_sec_);
+  this->declare_parameter("allow_rotation_when_blocked", true);
+  this->declare_parameter("allow_reverse_when_blocked", true);
 
-        get_parameter(
-            "allow_rotation_when_blocked",
-            allow_rotation_when_blocked_);
+  this->declare_parameter("max_linear_x", 0.35);
+  this->declare_parameter("max_angular_z", 1.5);
 
-        get_parameter(
-            "allow_reverse_when_blocked",
-            allow_reverse_when_blocked_);
+  this->declare_parameter("enable_slowdown", true);
+  this->declare_parameter("slowdown_distance_m", 0.80);
+  this->declare_parameter("min_slowdown_factor", 0.25);
+}
 
-        get_parameter("max_linear_x", max_linear_x_);
-        get_parameter("max_angular_z", max_angular_z_);
+void LidarSafetyNode::load_parameters() {
+  config_.input_cmd_topic =
+      this->get_parameter("input_cmd_topic").as_string();
+  config_.output_cmd_topic =
+      this->get_parameter("output_cmd_topic").as_string();
+  config_.front_distance_topic =
+      this->get_parameter("front_distance_topic").as_string();
+  config_.safety_stop_topic =
+      this->get_parameter("safety_stop_topic").as_string();
 
-        get_parameter("enable_slowdown", enable_slowdown_);
-        get_parameter("slowdown_distance_m", slowdown_distance_m_);
-        get_parameter("min_slowdown_factor", min_slowdown_factor_);
+  config_.cmd_timeout_sec =
+      static_cast<float>(this->get_parameter("cmd_timeout_sec").as_double());
+  config_.lidar_timeout_sec =
+      static_cast<float>(this->get_parameter("lidar_timeout_sec").as_double());
 
-        max_linear_x_ = std::abs(max_linear_x_);
-        max_angular_z_ = std::abs(max_angular_z_);
+  config_.stop_distance_m =
+      static_cast<float>(this->get_parameter("stop_distance_m").as_double());
+  config_.clear_distance_m =
+      static_cast<float>(this->get_parameter("clear_distance_m").as_double());
+  config_.invalid_front_timeout_sec = static_cast<float>(
+      this->get_parameter("invalid_front_timeout_sec").as_double());
 
-        min_slowdown_factor_ =
-            std::clamp(min_slowdown_factor_, 0.0, 1.0);
+  config_.allow_rotation_when_blocked =
+      this->get_parameter("allow_rotation_when_blocked").as_bool();
+  config_.allow_reverse_when_blocked =
+      this->get_parameter("allow_reverse_when_blocked").as_bool();
 
-        last_cmd_time_ = now_sec();
-        last_lidar_time_ = now_sec();
-        last_valid_front_time_ = 0.0;
+  config_.max_linear_x = std::abs(
+      static_cast<float>(this->get_parameter("max_linear_x").as_double()));
+  config_.max_angular_z = std::abs(
+      static_cast<float>(this->get_parameter("max_angular_z").as_double()));
 
-        cmd_sub_ = create_subscription<geometry_msgs::msg::Twist>(
-            input_cmd_topic_,
-            1,
-            std::bind(
-                &LidarSafety::cmdCallback,
-                this,
-                std::placeholders::_1));
+  config_.enable_slowdown =
+      this->get_parameter("enable_slowdown").as_bool();
+  config_.slowdown_distance_m =
+      static_cast<float>(this->get_parameter("slowdown_distance_m").as_double());
+  config_.min_slowdown_factor =
+      static_cast<float>(this->get_parameter("min_slowdown_factor").as_double());
 
-        front_sub_ = create_subscription<std_msgs::msg::Float32>(
-            front_distance_topic_,
-            1,
-            std::bind(
-                &LidarSafety::frontDistanceCallback,
-                this,
-                std::placeholders::_1));
+  // Clamp min_slowdown_factor to [0, 1]
+  config_.min_slowdown_factor =
+      std::max(0.0f, std::min(1.0f, config_.min_slowdown_factor));
+}
 
-        cmd_pub_ =
-            create_publisher<geometry_msgs::msg::Twist>(
-                output_cmd_topic_,
-                1);
+void LidarSafetyNode::cmd_callback(
+    const geometry_msgs::msg::Twist::SharedPtr msg) {
+  last_cmd_ = *msg;
+  last_cmd_time_ = std::chrono::system_clock::now();
+}
 
-        stop_pub_ =
-            create_publisher<std_msgs::msg::Bool>(
-                safety_stop_topic_,
-                10);
+void LidarSafetyNode::front_distance_callback(
+    const std_msgs::msg::Float32::SharedPtr msg) {
+  auto now = std::chrono::system_clock::now();
+  last_lidar_time_ = now;
 
-        timer_ = create_wall_timer(
-            10ms,
-            std::bind(
-                &LidarSafety::controlLoop,
-                this));
+  float distance = msg->data;
 
-        RCLCPP_INFO(
-            get_logger(),
-            "Lidar safety started: %s -> %s, front=%s stop=%.2f clear=%.2f",
-            input_cmd_topic_.c_str(),
-            output_cmd_topic_.c_str(),
-            front_distance_topic_.c_str(),
-            stop_distance_m_,
-            clear_distance_m_);
-    }
+  if (distance >= 0.0f) {
+    front_distance_ = distance;
+    last_valid_front_time_ = now;
 
-private:
-    double now_sec() const
-    {
-        return this->get_clock()->now().seconds();
-    }
+    if (distance <= config_.stop_distance_m) {
+      front_blocked_ = true;
 
-    void cmdCallback(
-        const geometry_msgs::msg::Twist::SharedPtr msg)
-    {
-        last_cmd_ = *msg;
-        last_cmd_time_ = now_sec();
-    }
+      if (last_cmd_.linear.x > 0.0) {
+        auto stop_cmd = make_stop_cmd();
 
-    void frontDistanceCallback(
-        const std_msgs::msg::Float32::SharedPtr msg)
-    {
-        double now = now_sec();
-
-        float distance = msg->data;
-
-        last_lidar_time_ = now;
-
-        if (distance >= 0.0f)
-        {
-            front_distance_ = distance;
-            last_valid_front_time_ = now;
-
-            if (distance <= stop_distance_m_)
-            {
-                front_blocked_ = true;
-
-                if (last_cmd_.linear.x > 0.0)
-                {
-                    auto stop_cmd = makeStopCmd();
-
-                    if (allow_rotation_when_blocked_)
-                    {
-                        stop_cmd.angular.z =
-                            last_cmd_.angular.z;
-                    }
-
-                    cmd_pub_->publish(stop_cmd);
-                    publishStopState(true);
-                }
-            }
-        }
-    }
-
-    geometry_msgs::msg::Twist makeStopCmd()
-    {
-        return geometry_msgs::msg::Twist();
-    }
-
-    geometry_msgs::msg::Twist clampCmd(
-        geometry_msgs::msg::Twist cmd)
-    {
-        cmd.linear.x =
-            std::clamp(
-                cmd.linear.x,
-                -max_linear_x_,
-                max_linear_x_);
-
-        cmd.angular.z =
-            std::clamp(
-                cmd.angular.z,
-                -max_angular_z_,
-                max_angular_z_);
-
-        cmd.linear.y = 0.0;
-
-        return cmd;
-    }
-
-    bool validFrontDistance()
-    {
-        double now = now_sec();
-
-        return
-            front_distance_ >= 0.0 &&
-            (now - last_valid_front_time_)
-                <= invalid_front_timeout_sec_;
-    }
-
-    void updateBlockedState()
-    {
-        if (!validFrontDistance())
-        {
-            return;
+        if (config_.allow_rotation_when_blocked) {
+          stop_cmd.angular.z = last_cmd_.angular.z;
         }
 
-        if (front_blocked_)
-        {
-            if (front_distance_ >= clear_distance_m_)
-            {
-                front_blocked_ = false;
-            }
-        }
-        else
-        {
-            if (front_distance_ <= stop_distance_m_)
-            {
-                front_blocked_ = true;
-            }
-        }
+        cmd_pub_->publish(stop_cmd);
+        publish_stop_state(true);
+      }
     }
+  }
+}
 
-    double slowdownFactor()
-    {
-        if (!enable_slowdown_)
-            return 1.0;
+geometry_msgs::msg::Twist LidarSafetyNode::make_stop_cmd() const {
+  geometry_msgs::msg::Twist msg;
+  msg.linear.x = 0.0;
+  msg.linear.y = 0.0;
+  msg.linear.z = 0.0;
+  msg.angular.x = 0.0;
+  msg.angular.y = 0.0;
+  msg.angular.z = 0.0;
+  return msg;
+}
 
-        if (!validFrontDistance())
-            return 1.0;
+geometry_msgs::msg::Twist LidarSafetyNode::clamp_cmd(
+    geometry_msgs::msg::Twist cmd) const {
+  if (cmd.linear.x > config_.max_linear_x) {
+    cmd.linear.x = config_.max_linear_x;
+  } else if (cmd.linear.x < -config_.max_linear_x) {
+    cmd.linear.x = -config_.max_linear_x;
+  }
 
-        if (front_distance_ >= slowdown_distance_m_)
-            return 1.0;
+  if (cmd.angular.z > config_.max_angular_z) {
+    cmd.angular.z = config_.max_angular_z;
+  } else if (cmd.angular.z < -config_.max_angular_z) {
+    cmd.angular.z = -config_.max_angular_z;
+  }
 
-        if (slowdown_distance_m_ <= 0.01)
-            return 1.0;
+  // Differential robot doesn't move sideways
+  cmd.linear.y = 0.0;
 
-        double factor =
-            front_distance_ / slowdown_distance_m_;
+  return cmd;
+}
 
-        return std::clamp(
-            factor,
-            min_slowdown_factor_,
-            1.0);
+bool LidarSafetyNode::valid_front_distance() const {
+  auto now = std::chrono::system_clock::now();
+  auto age = std::chrono::duration_cast<std::chrono::duration<float>>(
+      now - last_valid_front_time_);
+  return front_distance_ >= 0.0f &&
+         age.count() <= config_.invalid_front_timeout_sec;
+}
+
+void LidarSafetyNode::update_blocked_state() {
+  // Hysteresis logic
+  if (!valid_front_distance()) {
+    // If data temporarily missing, keep blocked state
+    return;
+  }
+
+  if (front_blocked_) {
+    if (front_distance_ >= config_.clear_distance_m) {
+      front_blocked_ = false;
     }
-
-    void publishStopState(bool active)
-    {
-        std_msgs::msg::Bool msg;
-        msg.data = active;
-        stop_pub_->publish(msg);
+  } else {
+    if (front_distance_ <= config_.stop_distance_m) {
+      front_blocked_ = true;
     }
+  }
+}
 
-    void controlLoop()
-    {
-        double now = now_sec();
+float LidarSafetyNode::slowdown_factor() const {
+  if (!config_.enable_slowdown) {
+    return 1.0f;
+  }
 
-        if ((now - last_cmd_time_) > cmd_timeout_sec_)
-        {
-            cmd_pub_->publish(makeStopCmd());
-            publishStopState(true);
-            return;
-        }
+  if (!valid_front_distance()) {
+    return 1.0f;
+  }
 
-        if ((now - last_lidar_time_) > lidar_timeout_sec_)
-        {
-            RCLCPP_WARN(
-                get_logger(),
-                "LIDAR TIMEOUT: stopping robot");
+  if (front_distance_ >= config_.slowdown_distance_m) {
+    return 1.0f;
+  }
 
-            cmd_pub_->publish(makeStopCmd());
-            publishStopState(true);
-            return;
-        }
+  if (config_.slowdown_distance_m <= 0.01f) {
+    return 1.0f;
+  }
 
-        updateBlockedState();
+  float factor = front_distance_ / config_.slowdown_distance_m;
+  factor = std::max(config_.min_slowdown_factor,
+                    std::min(1.0f, factor));
+  return factor;
+}
 
-        auto cmd = last_cmd_;
+void LidarSafetyNode::publish_stop_state(bool active) {
+  auto msg = std::make_unique<std_msgs::msg::Bool>();
+  msg->data = active;
+  stop_pub_->publish(std::move(msg));
+}
 
-        cmd = clampCmd(cmd);
+void LidarSafetyNode::control_loop() {
+  auto now = std::chrono::system_clock::now();
 
-        bool moving_forward = cmd.linear.x > 0.0;
-        bool moving_backward = cmd.linear.x < 0.0;
+  // Check cmd timeout
+  auto cmd_age = std::chrono::duration_cast<std::chrono::duration<float>>(
+      now - last_cmd_time_);
+  if (cmd_age.count() > config_.cmd_timeout_sec) {
+    cmd_pub_->publish(make_stop_cmd());
+    publish_stop_state(true);
+    RCLCPP_WARN(this->get_logger(), "CMD TIMEOUT: stopping robot");
+    return;
+  }
 
-        bool safety_active = false;
-        std::string reason = "OK";
+  // Check lidar timeout
+  auto lidar_age = std::chrono::duration_cast<std::chrono::duration<float>>(
+      now - last_lidar_time_);
+  if (lidar_age.count() > config_.lidar_timeout_sec) {
+    cmd_pub_->publish(make_stop_cmd());
+    publish_stop_state(true);
+    RCLCPP_WARN(this->get_logger(), "LIDAR TIMEOUT: stopping robot");
+    return;
+  }
 
-        if (front_blocked_ && moving_forward)
-        {
-            cmd.linear.x = 0.0;
+  // Update safety state
+  update_blocked_state();
 
-            safety_active = true;
-            reason = "front blocked";
+  // Copy command
+  auto cmd = last_cmd_;
+  cmd = clamp_cmd(cmd);
 
-            if (!allow_rotation_when_blocked_)
-            {
-                cmd.angular.z = 0.0;
-            }
-        }
+  bool moving_forward = cmd.linear.x > 0.0f;
+  bool moving_backward = cmd.linear.x < 0.0f;
 
-        if (front_blocked_ &&
-            moving_backward &&
-            !allow_reverse_when_blocked_)
-        {
-            cmd.linear.x = 0.0;
+  bool safety_active = false;
+  std::string reason = "OK";
 
-            safety_active = true;
-            reason =
-                "reverse disabled while blocked";
-        }
+  // Safety logic
+  if (front_blocked_ && moving_forward) {
+    cmd.linear.x = 0.0f;
+    safety_active = true;
+    reason = "front blocked";
 
-        if (!front_blocked_ && moving_forward)
-        {
-            double factor = slowdownFactor();
-
-            if (factor < 1.0)
-            {
-                cmd.linear.x *= factor;
-
-                safety_active = true;
-
-                reason =
-                    "slowdown " +
-                    std::to_string(factor);
-            }
-        }
-
-        cmd = clampCmd(cmd);
-
-        cmd_pub_->publish(cmd);
-        publishStopState(safety_active);
-
-        logStatus(
-            cmd,
-            safety_active,
-            reason);
+    if (!config_.allow_rotation_when_blocked) {
+      cmd.angular.z = 0.0f;
     }
+  }
 
-    void logStatus(
-        const geometry_msgs::msg::Twist &cmd,
-        bool safety_active,
-        const std::string &reason)
-    {
-        double now = now_sec();
+  if (front_blocked_ && moving_backward &&
+      !config_.allow_reverse_when_blocked) {
+    cmd.linear.x = 0.0f;
+    safety_active = true;
+    reason = "reverse disabled while blocked";
+  }
 
-        if ((now - last_log_) < 0.5)
-            return;
-
-        last_log_ = now;
-
-        if (safety_active)
-        {
-            RCLCPP_WARN(
-                get_logger(),
-                "SAFETY: %s | front=%.3f m | out linear.x=%.3f angular.z=%.3f",
-                reason.c_str(),
-                front_distance_,
-                cmd.linear.x,
-                cmd.angular.z);
-        }
-        else
-        {
-            RCLCPP_INFO(
-                get_logger(),
-                "OK | front=%.3f m | out linear.x=%.3f angular.z=%.3f",
-                front_distance_,
-                cmd.linear.x,
-                cmd.angular.z);
-        }
+  if (!front_blocked_ && moving_forward) {
+    float factor = slowdown_factor();
+    if (factor < 1.0f) {
+      cmd.linear.x *= factor;
+      safety_active = true;
+      std::ostringstream ss;
+      ss << "slowdown " << std::fixed << std::setprecision(2) << factor;
+      reason = ss.str();
     }
+  }
 
-private:
-    std::string input_cmd_topic_;
-    std::string output_cmd_topic_;
-    std::string front_distance_topic_;
-    std::string safety_stop_topic_;
+  cmd = clamp_cmd(cmd);
 
-    double cmd_timeout_sec_;
-    double lidar_timeout_sec_;
+  cmd_pub_->publish(cmd);
+  publish_stop_state(safety_active);
 
-    double stop_distance_m_;
-    double clear_distance_m_;
+  log_status(cmd, safety_active, reason);
+}
 
-    double invalid_front_timeout_sec_;
+void LidarSafetyNode::log_status(const geometry_msgs::msg::Twist& cmd,
+                                  bool safety_active,
+                                  const std::string& reason) {
+  auto now = std::chrono::system_clock::now();
+  auto log_age = std::chrono::duration_cast<std::chrono::duration<float>>(
+      now - last_log_time_);
 
-    bool allow_rotation_when_blocked_;
-    bool allow_reverse_when_blocked_;
+  if (log_age.count() < 0.5f) {
+    return;
+  }
 
-    double max_linear_x_;
-    double max_angular_z_;
+  last_log_time_ = now;
 
-    bool enable_slowdown_;
-    double slowdown_distance_m_;
-    double min_slowdown_factor_;
+  std::ostringstream ss;
+  ss << std::fixed << std::setprecision(3);
 
-    geometry_msgs::msg::Twist last_cmd_;
+  if (safety_active) {
+    ss << "SAFETY: " << reason << " | front=" << front_distance_ << " m | "
+       << "out linear.x=" << cmd.linear.x << ", angular.z="
+       << cmd.angular.z;
+    RCLCPP_WARN(this->get_logger(), "%s", ss.str().c_str());
+  } else {
+    ss << "OK | front=" << front_distance_ << " m | "
+       << "out linear.x=" << cmd.linear.x << ", angular.z="
+       << cmd.angular.z;
+    RCLCPP_INFO(this->get_logger(), "%s", ss.str().c_str());
+  }
+}
 
-    double last_cmd_time_{0.0};
-    double last_lidar_time_{0.0};
-    double last_valid_front_time_{0.0};
+void LidarSafetyNode::log_startup(rclcpp::Logger logger, const Config& cfg) {
+  RCLCPP_INFO(logger,
+              "Lidar safety started: %s -> %s, front_topic=%s, "
+              "stop=%.2f, clear=%.2f",
+              cfg.input_cmd_topic.c_str(), cfg.output_cmd_topic.c_str(),
+              cfg.front_distance_topic.c_str(), cfg.stop_distance_m,
+              cfg.clear_distance_m);
+}
 
-    double last_log_{0.0};
+}  // namespace ld06
 
-    double front_distance_{-1.0};
+// ============================================================================
+// Main
+// ============================================================================
 
-    bool front_blocked_{false};
-
-    rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_sub_;
-    rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr front_sub_;
-
-    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_pub_;
-    rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr stop_pub_;
-
-    rclcpp::TimerBase::SharedPtr timer_;
-};
-
-int main(int argc, char **argv)
-{
-    rclcpp::init(argc, argv);
-
-    auto node = std::make_shared<LidarSafety>();
-
-    rclcpp::spin(node);
-
-    rclcpp::shutdown();
-
-    return 0;
+int main(int argc, char* argv[]) {
+  rclcpp::init(argc, argv);
+  rclcpp::spin(std::make_shared<ld06::LidarSafetyNode>());
+  rclcpp::shutdown();
+  return 0;
 }
