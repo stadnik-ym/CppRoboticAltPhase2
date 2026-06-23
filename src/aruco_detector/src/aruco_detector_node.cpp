@@ -1,3 +1,4 @@
+#include "geometry_msgs/msg/point.hpp"
 #include "sensor_msgs/msg/image.hpp"
 #include <memory>
 #include <vector>
@@ -33,6 +34,7 @@ public:
                     std::placeholders::_1));
 
         image_pub_ = this->create_publisher<sensor_msgs::msg::Image>("/camera/image_aruco", 10);
+        target_pub_ = this->create_publisher<geometry_msgs::msg::Point>("/aruco_target", 10);
         RCLCPP_INFO(
             this->get_logger(),
             "ArUco Detector Node started. Waiting for images...");
@@ -67,11 +69,24 @@ private:
         if (!marker_ids.empty())
         {
             RCLCPP_INFO(this->get_logger(), "Detected %zu marker(s)", marker_ids.size());
+            const auto &corners = marker_corners[0];
+            float cx = (corners[0].x + corners[1].x + corners[2].x + corners[3].x) / 4.0;
+            float img_center_x = cv_ptr->image.cols / 2.0;
+            float norm_x = (cx - img_center_x) / img_center_x;
 
-            for (const auto &id : marker_ids)
-            {
-                RCLCPP_INFO(this->get_logger(), "Marker ID: %d", id);
-            }
+            float width = cv::norm(corners[0] - corners[1]);
+            float height = cv::norm(corners[1] - corners[2]);
+            float area = width * height;
+
+            auto msg = geometry_msgs::msg::Point();
+            msg.x = norm_x;
+            msg.y = 0.0;
+            msg.z = area;
+            target_pub_->publish(msg);
+            // for (const auto &id : marker_ids)
+            // {
+            //     RCLCPP_INFO(this->get_logger(), "Marker ID: %d", id);
+            // }
 
             cv::aruco::drawDetectedMarkers(cv_ptr->image, marker_corners, marker_ids);
         }
@@ -81,6 +96,7 @@ private:
 
     rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr subscription_;
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_pub_;
+    rclcpp::Publisher<geometry_msgs::msg::Point>::SharedPtr target_pub_;
 
     cv::aruco::Dictionary dictionary_;
     cv::aruco::DetectorParameters detector_params_;
