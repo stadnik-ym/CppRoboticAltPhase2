@@ -35,6 +35,8 @@
               cv-bridge
               example-interfaces
               aruco
+
+              teleop-twist-keyboard
             ];
           };
 
