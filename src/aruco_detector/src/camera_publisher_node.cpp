@@ -20,7 +20,7 @@ class CameraPublisher : public rclcpp::Node
     CameraPublisher() : Node("camera_publisher_node")
     {
         // camera path (/dev/video0 за замовчуванням)
-        this->declare_parameter<std::string>("camera_path", "0");
+        this->declare_parameter<std::string>("camera_path", "1");
         std::string cam_path = this->get_parameter("camera_path").as_string();
         RCLCPP_INFO(this->get_logger(), "пробуємо відкрити камеру: %s", cam_path.c_str());
 
