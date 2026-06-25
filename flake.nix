@@ -47,6 +47,7 @@
             pkgs.cmake
             pkgs.clang-tools
             pkgs.colcon
+            pkgs.libcamera
           ];
 
           buildInputs = [
