@@ -35,8 +35,8 @@
               cv-bridge
               example-interfaces
               aruco
-              camera-ros
-              libcamera
+              # camera-ros
+              # libcamera
             ];
           };
 
@@ -49,7 +49,7 @@
             pkgs.cmake
             pkgs.clang-tools
             pkgs.colcon
-            pkgs.libcamera
+            # pkgs.libcamera
           ];
 
           buildInputs = [
