@@ -76,6 +76,7 @@ message(STATUS "Found lgpio library: ${LGPIO_LIB}")
 message(STATUS "Found lgpio headers: ${LGPIO_INCLUDE_DIR}")
 
 add_executable(motor_node src/motor_node.cpp)
+add_executable(state_machine_node src/state_machine_node.cpp)
 target_include_directories(motor_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
@@ -94,7 +95,7 @@ ament_target_dependencies(
 target_link_libraries(motor_node
   ${LGPIO_LIB})
 
-install(TARGETS motor_node
+install(TARGETS motor_node state_machine_node
   DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
