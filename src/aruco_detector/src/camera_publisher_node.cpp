@@ -21,18 +21,32 @@ class CameraPublisher : public rclcpp::Node
     {
         // camera path (/dev/video0 за замовчуванням)
         this->declare_parameter<std::string>("camera_path", "0");
-        std::string cam_path = this->get_parameter("camera_path").as_string();
-        RCLCPP_INFO(this->get_logger(), "пробуємо відкрити камеру: %s", cam_path.c_str());
+        std::string camera_path = this->get_parameter("camera_path").as_string();
+        RCLCPP_INFO(this->get_logger(), "пробуємо відкрити камеру: %s", camera_path.c_str());
 
-        bool is_int = !cam_path.empty() && std::all_of(cam_path.begin(), cam_path.end(), ::isdigit);
+        // bool is_int = !cam_path.empty() && std::all_of(cam_path.begin(), cam_path.end(), ::isdigit);
 
-        if (is_int)
+        bool is_number =
+            !camera_path.empty() &&
+            std::all_of(camera_path.begin(), camera_path.end(), ::isdigit);
+
+        std::string pipeline;
+
+        if (is_number)
         {
-            cap_.open(std::stoi(cam_path), cv::CAP_GSTREAMER);
-        } else
-        {
-            cap_.open(cam_path);
+            pipeline =
+                "v4l2src device=/dev/video" + camera_path + " ! "
+                "video/x-raw,framerate=30/1 ! "
+                "videoconvert ! "
+                "video/x-raw,format=BGR ! "
+                "appsink";
         }
+        else
+        {
+            pipeline = camera_path;
+        }
+
+        cap_.open(pipeline, cv::CAP_GSTREAMER);
 
         if (!cap_.isOpened())
         {
