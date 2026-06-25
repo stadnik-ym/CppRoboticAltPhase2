@@ -1,58 +1,90 @@
-#include <algorithm>
-#include <cctype>
 #include <chrono>
 #include <memory>
+#include <string>
 
-#include <opencv2/core/utility.hpp>
+#include <opencv2/opencv.hpp>
 #include <opencv2/videoio.hpp>
+
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <cv_bridge/cv_bridge.hpp>
-#include <opencv2/opencv.hpp>
-#include <stdexcept>
-#include <string>
 
 using namespace std::chrono_literals;
 
 class CameraPublisher : public rclcpp::Node
 {
-    public:
+public:
     CameraPublisher() : Node("camera_publisher_node")
     {
-        // camera path (/dev/video0 за замовчуванням)
-        this->declare_parameter<std::string>("camera_path", "0");
-        std::string cam_path = this->get_parameter("camera_path").as_string();
-        RCLCPP_INFO(this->get_logger(), "пробуємо відкрити камеру: %s", cam_path.c_str());
+        // Параметр оставляем, но теперь он просто включает/выключает libcamera
+        this->declare_parameter<std::string>("camera_backend", "libcamera");
 
-        bool is_int = !cam_path.empty() && std::all_of(cam_path.begin(), cam_path.end(), ::isdigit);
+        std::string backend = this->get_parameter("camera_backend").as_string();
 
-        if (is_int)
+        RCLCPP_INFO(this->get_logger(),
+                    "Starting camera node with backend: %s",
+                    backend.c_str());
+
+        std::string pipeline;
+
+        if (backend == "libcamera")
         {
-            cap_.open(std::stoi(cam_path), cv::CAP_V4L2);
-        } else
-        {
-            cap_.open(cam_path);
+            pipeline =
+                "libcamerasrc ! "
+                "video/x-raw,format=RGBx,width=640,height=480,framerate=30/1 ! "
+                "videoconvert ! "
+                "video/x-raw,format=BGR ! "
+                "appsink drop=true max-buffers=1 sync=false";
         }
+        else
+        {
+            RCLCPP_ERROR(this->get_logger(),
+                         "Unsupported backend. Only 'libcamera' is allowed.");
+            throw std::runtime_error("invalid camera backend");
+        }
+
+        RCLCPP_INFO(this->get_logger(), "GStreamer pipeline:\n%s", pipeline.c_str());
+
+        cap_.open(pipeline, cv::CAP_GSTREAMER);
 
         if (!cap_.isOpened())
         {
-            RCLCPP_ERROR(get_logger(), "cannot open camera");
+            RCLCPP_ERROR(this->get_logger(), "Failed to open camera pipeline");
             throw std::runtime_error("camera open failed");
         }
 
-        publisher_ = create_publisher<sensor_msgs::msg::Image>("/camera/image_raw", 10);
-        timer_ = create_wall_timer(33ms, std::bind(&CameraPublisher::publish_frame, this));
+        publisher_ = this->create_publisher<sensor_msgs::msg::Image>(
+            "/camera/image_raw", 10);
+
+        timer_ = this->create_wall_timer(
+            33ms,
+            std::bind(&CameraPublisher::publish_frame, this));
+
+        RCLCPP_INFO(this->get_logger(), "Camera node started successfully");
     }
-    private:
+
+private:
     void publish_frame()
     {
         cv::Mat frame;
         cap_ >> frame;
 
-        if (frame.empty()) return;
+        if (frame.empty())
+        {
+            RCLCPP_WARN(this->get_logger(), "Empty frame received");
+            return;
+        }
 
-        auto msg = cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", frame).toImageMsg();
-        publisher_ -> publish(*msg);
+        auto msg =
+            cv_bridge::CvImage(std_msgs::msg::Header(),
+                               "bgr8",
+                               frame)
+                .toImageMsg();
+
+        msg->header.stamp = this->get_clock()->now();
+        msg->header.frame_id = "camera_frame";
+
+        publisher_->publish(*msg);
     }
 
     cv::VideoCapture cap_;
