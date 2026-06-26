@@ -57,6 +57,7 @@
             pkgs.gst_all_1.gst-plugins-ugly
             pkgs.gst_all_1.gst-libav
             pkgs.gst_all_1.gst-plugins-rs
+            pkgs.libcamera
           ];
 
           buildInputs = [
@@ -71,9 +72,6 @@
             export LD_LIBRARY_PATH=${pkgs.lgpio}/lib:$LD_LIBRARY_PATH
             export LIBRARY_PATH=${pkgs.lgpio}/lib:$LIBRARY_PATH
             export CPATH=${pkgs.lgpio}/include:$CPATH
-
-            # export GST_PLUGIN_PATH=/usr/lib/aarch64-linux-gnu/gstreamer-1.0
-            # export LD_LIBRARY_PATH=/usr/lib/aarch64-linux-gnu:$LD_LIBRARY_PATH
           '';
         };
       }
