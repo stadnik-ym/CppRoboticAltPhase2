@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(buzzer_node)
+project(buzzer)
 
 # --- C++ standard ---
 if(NOT CMAKE_CXX_STANDARD)

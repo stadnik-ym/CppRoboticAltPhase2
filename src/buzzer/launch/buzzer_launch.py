@@ -11,9 +11,9 @@ def generate_launch_description():
             output="screen",
             parameters=[{
                 # gpiochip0 on Raspberry Pi 5 — check with `gpiodetect`
-                "gpio_chip": "gpiochip0",
-                # BCM pin number (e.g. 17 = physical pin 11)
-                "gpio_line": 17,
+                "gpio_chip": "gpiochip4",
+                # BCM pin number (e.g. 18 = physical pin 12)
+                "gpio_line": 18,
                 # How long to beep when True is received (milliseconds)
                 "beep_duration_ms": 500,
                 # Software PWM frequency for passive buzzers (Hz).
