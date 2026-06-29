@@ -5,7 +5,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
     return LaunchDescription([
         Node(
-            package="buzzer_node",
+            package="buzzer",
             executable="buzzer_node",
             name="buzzer_node",
             output="screen",
