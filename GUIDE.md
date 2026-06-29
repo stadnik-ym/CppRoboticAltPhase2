@@ -42,6 +42,9 @@ git checkout -b feature/{назва пакету}
 
 ## Корисні посилання
 https://github.com/roboaltic/RoboticAlt - репозиторій Артема 
+
 https://github.com/stadnik-ym/robotalt - мій перезалив останньої версії проекта на пайтоні (референс під перепис на С++)
+
 https://github.com/lopsided98/nix-ros-overlay - ROS2 для Nix
+
 https://docs.ros2.org/latest/api/rclcpp - документація для rclcpp
