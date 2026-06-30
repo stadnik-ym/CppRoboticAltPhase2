@@ -64,9 +64,17 @@ def generate_launch_description():
         ]
     )
 
+    motor_node = Node(
+        package='diff_drive',
+        executable='motor_node',
+        name='motor_node',
+        output='screen'
+    )
+
     return LaunchDescription([
         port_arg,
         baudrate_arg,
         ld06_node,
         safety_node,
+        motor_node,
     ])
