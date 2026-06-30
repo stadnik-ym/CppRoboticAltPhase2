@@ -15,7 +15,7 @@ BuzzerNode::BuzzerNode(const rclcpp::NodeOptions & options)
 : Node("buzzer_node", options)
 {
   this->declare_parameter<std::string>("gpio_chip",       "gpiochip0");
-  this->declare_parameter<int>        ("gpio_line",       17);
+  this->declare_parameter<int>        ("gpio_line",       18);
   this->declare_parameter<int>        ("beep_duration_ms",  500);
   this->declare_parameter<int>        ("beep_frequency_hz", 2000);
 
