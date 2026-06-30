@@ -35,6 +35,8 @@
               cv-bridge
               example-interfaces
               aruco
+
+              teleop-twist-keyboard
             ];
           };
 
@@ -47,6 +49,15 @@
             pkgs.cmake
             pkgs.clang-tools
             pkgs.colcon
+            pkgs.libcamera
+            pkgs.gst_all_1.gstreamer
+            pkgs.gst_all_1.gst-plugins-base
+            pkgs.gst_all_1.gst-plugins-good
+            pkgs.gst_all_1.gst-plugins-bad
+            pkgs.gst_all_1.gst-plugins-ugly
+            pkgs.gst_all_1.gst-libav
+            pkgs.gst_all_1.gst-plugins-rs
+            pkgs.libcamera
           ];
 
           buildInputs = [
@@ -54,6 +65,7 @@
             pkgs.lgpio
             pkgs.opencv
             pkgs.pcl
+            pkgs.libserialport
             ros-packages
           ];
 
