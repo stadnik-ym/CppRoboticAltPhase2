@@ -75,27 +75,36 @@ find_path(LGPIO_INCLUDE_DIR NAMES lgpio.h REQUIRED
 message(STATUS "Found lgpio library: ${LGPIO_LIB}")
 message(STATUS "Found lgpio headers: ${LGPIO_INCLUDE_DIR}")
 
+# --- Твої три виконувані файли в межах одного пакета ---
 add_executable(motor_node src/motor_node.cpp)
 add_executable(state_machine_node src/state_machine_node.cpp)
+add_executable(hardware_protection_node src/hardware_protection_node.cpp)
+
+# Налаштування директорій включення для моторів та захисту
 target_include_directories(motor_node PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
   ${LGPIO_INCLUDE_DIR})
 
-target_compile_features(motor_node PUBLIC c_std_99 cxx_std_17)
+target_include_directories(hardware_protection_node PRIVATE
+  ${LGPIO_INCLUDE_DIR})
 
-ament_target_dependencies(
-  motor_node
-  "rclcpp"
-  "geometry_msgs"
-  "std_msgs"
-  "nav_msgs"
-)
+# Налаштування стандартів мови (переводимо на C++20 відповідно до звіту)
+target_compile_features(motor_node PUBLIC cxx_std_20)
+target_compile_features(state_machine_node PUBLIC cxx_std_20)
+target_compile_features(hardware_protection_node PUBLIC cxx_std_20)
 
-target_link_libraries(motor_node
-  ${LGPIO_LIB})
+# Залежності ROS 2
+ament_target_dependencies(motor_node "rclcpp" "geometry_msgs" "std_msgs" "nav_msgs")
+ament_target_dependencies(state_machine_node "rclcpp" "geometry_msgs" "std_msgs" "nav_msgs")
+ament_target_dependencies(hardware_protection_node "rclcpp" "geometry_msgs" "std_msgs")
 
-install(TARGETS motor_node state_machine_node
+# Лінковка з апаратною бібліотекою lgpio
+target_link_libraries(motor_node ${LGPIO_LIB})
+target_link_libraries(hardware_protection_node ${LGPIO_LIB})
+
+# Інсталяція всіх трьох нод
+install(TARGETS motor_node state_machine_node hardware_protection_node
   DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
