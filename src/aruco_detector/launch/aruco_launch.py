@@ -26,7 +26,7 @@ def generate_launch_description():
         output='screen',
         emulate_tty=True,
         # parameters=[{'camera_path': LaunchConfiguration('camera_path')}],
-        parametrs = []
+        parameters = [],
     )
 
     return LaunchDescription([aruco_detector_node, camera_publisher_node])
