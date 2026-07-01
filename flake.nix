@@ -58,6 +58,12 @@
             pkgs.gst_all_1.gst-libav
             pkgs.gst_all_1.gst-plugins-rs
             pkgs.libcamera
+            (pkgs.python313.withPackages (
+              ps: with ps; [
+                smbus2
+                i2c-tools
+              ]
+            ))
           ];
 
           buildInputs = [
