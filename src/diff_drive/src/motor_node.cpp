@@ -11,9 +11,6 @@
 #include <geometry_msgs/msg/twist.hpp>
 #include <nav_msgs/nav_msgs/msg/odometry.hpp>
 
-// Предполагаем, что пины лежат здесь, либо замени на свои константы
-// #include "../include/diff_drive/artemka.hpp"
-
 namespace artemka {
     const int ENA = 17;
     const int IN1 = 27;

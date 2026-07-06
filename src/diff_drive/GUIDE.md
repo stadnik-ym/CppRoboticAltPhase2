@@ -8,10 +8,6 @@
 # Запусти ноду
 ros2 run diff_drive motor_node
 
-# Або через launch (якщо є)
-ros2 launch diff_drive diff_drive_launch.py
-```
-
 ## Архітектура
 
 ```
