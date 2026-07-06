@@ -1,21 +1,11 @@
-# LD06 ROS2 Driver (C++)
+# LD06 Lidar (C++)
 
 Драйвер LD06 LiDAR для ROS2. Читає 360° сканування, публікує LaserScan і safety layer для гальмування при перешкодах.
-
-## Встановлення
-
-```bash
-cd ~/ros2_ws/src
-# Клонуй пакет (якщо ще немає)
-git clone <repo> ld06_lidar
-cd ~/ros2_ws
-colcon build --packages-select ld06_lidar --symlink-install
-```
 
 ## Запуск
 
 ```bash
-# Стартуй лідар + safety (обидва ноди)
+# Лідар + safety (обидві ноди)
 ros2 launch ld06_lidar ld06_launch.py port:=/dev/ttyUSB0
 
 # З кастомним baudrate
@@ -203,31 +193,9 @@ ld06_lidar/
 ├── launch/
 │   └── ld06_launch.py              # Запуск обох нодів
 ├── include/ld06_lidar/
-│   ├── ld06_node.hpp               # Основний лідар
 │   ├── ld06_ros_node.hpp
-│   ├── ld06_serial_libserialport.hpp
-│   └── ld06_safety_node.hpp        # Safety layer
+│   └── ld06_safety_node.hpp        
 └── src/
     ├── ld06_ros_node.cpp
     ├── ld06_safety_node.cpp
-    ├── ld06_utils.cpp              # Парсинг пакетів
-    └── ld06_serial_libserialport.cpp
 ```
-
-## Залежності (Nix)
-
-```nix
-buildInputs = [
-  pkgs.libserialport,  # Серійна комунікація
-];
-```
-
-## Ліцензія
-
-MIT
-
----
-
-**Версія:** 1.0.0  
-**Платформа:** ROS2 Jazzy на NixOS  
-**Драйвер:** LD06 LiDAR
